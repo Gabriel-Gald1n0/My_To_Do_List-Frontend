@@ -67,7 +67,7 @@ export default function Login() {
             </p>
           </header>
           <input 
-          type="text" 
+          type="password" 
           className={styles.input} 
           onChange={(e) => setCredentials(
             {

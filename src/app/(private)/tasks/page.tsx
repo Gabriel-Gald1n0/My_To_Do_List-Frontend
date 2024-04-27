@@ -16,11 +16,13 @@ interface Task {
     id: number;
     title: string;
     description: string;
-    priority?: 'going' | 'low' | 'medium' | 'high' | 'finished' | null;
-    deadline?: Date | null;
+    status: 'Em andamento';
+    deadline?: Date | string | null;
+    priority?: 'low' | 'medium' | 'high' | 'finished' | null;
+    userId: number;
 }
 
-type PriorityType = 'going' | 'low' | 'medium' | 'high' | 'finished' | null;
+type PriorityType = 'low' | 'medium' | 'high' | 'finished' | null;
 
 export default function Tasks() {
     const [modalIsOpen, setModalIsOpen] = useState(false)
@@ -29,15 +31,18 @@ export default function Tasks() {
     const [newTask, setNewTask] = useState({
         title: '',
         description: '',
-        priority: 'going',
-        deadline: null,
-    } as Task);
+        status: 'Em andamento',
+        priority: 'low',
+        deadline: new Date().toISOString(),
+        userId: 1, // Defina o ID do usuário corretamente aqui
+    } as unknown as Task);
 
     useEffect(() => {
         // Função para buscar dados do banco de dados
         const fetchData = async () => {
             try {
                 const token = localStorage.getItem('token');
+                
                 if (!token) {
                     throw new Error('Token not found');
                 }
@@ -57,49 +62,76 @@ export default function Tasks() {
         fetchData();
     }, []); // [] como segundo argumento para garantir que useEffect seja chamado apenas uma vez ao montar o componente
 
-    async function handleFormSubmit(event: FormEvent<HTMLFormElement>) {
+    async function handleAddNewTask(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+    
+        // Adicione aqui a lógica para obter o token de autenticação do localStorage
+        const token = localStorage.getItem('token');
+        if (!token) {
+            console.error('Token not found');
+            return;
+        }
+    
+        // Defina a URL da API
+        const apiUrl = 'http://localhost:3001/api/task';
+    
+        // Crie a nova tarefa com os dados do estado
+        const newTaskData = {
+            ...newTask,
+            userId: 1 // Defina o ID corretamente, se necessário
+        };
+    
+        // Faça a solicitação POST para a API usando o Axios
+        await axios.post(apiUrl, newTaskData, {
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        })
+        .then(response => {
+            // Se a solicitação for bem-sucedida, adicione a nova tarefa à lista de tarefas no estado
+            setTasks([...tasks, response.data]);
+    
+            // Atualize o contador de ID e limpe os campos do formulário
+            setIdCounter(idCounter + 1);
+            setNewTask({
+                title: '',
+                description: '',
+                status: 'Em andamento',
+                priority: 'low',
+                deadline: new Date(),
+                userId: 1, // Defina o ID do usuário corretamente aqui
+                id: idCounter,
+            });
+    
+            // Feche o modal
+            setModalIsOpen(false);
+        })
+        .catch(error => {
+            // Se houver um erro na solicitação, imprima-o no console
+            console.error('Error adding new task:', error.response.data);
+        });
+    }
+           
+
+    async function handleDeleteTask(id: number) {
         try {
-            const response = await axios.post('http://localhost:3001/api/login', Credential);
-            localStorage.setItem('token', response.data.accessToken);
-            // Após o login bem-sucedido, buscar os dados das tarefas
+            // Enviar solicitação DELETE para a API
             const token = localStorage.getItem('token');
             if (!token) {
                 throw new Error('Token not found');
             }
-
-            const tasksResponse = await axios.get('http://localhost:3001/api/tasks', {
+            const apiUrl = `http://localhost:3001/api/task/${id}`;
+            await axios.delete(apiUrl, {
                 headers: {
                     'Authorization': 'Bearer ' + token
                 }
             });
-            setTasks(tasksResponse.data);
-            router.push('/tasks');
+    
+            // Atualizar o estado local removendo a tarefa excluída
+            setTasks(tasks.filter((task) => task.id !== id));
         } catch (error) {
-            console.log(error);
+            console.error('Error deleting task:', error);
         }
-    }
-
-    function handleAddNewTask(event: FormEvent<HTMLFormElement>) {
-        event.preventDefault()
-        setNewTask({
-            ...newTask,
-            id: idCounter
-        })
-        setTasks([...tasks, newTask])
-        setIdCounter(idCounter + 1)
-        setNewTask({
-            id: idCounter,
-            title: '',
-            description: '',
-            priority: 'going',
-            deadline: null,
-        })
-        setModalIsOpen(false)
-    }
-
-    function handleDeleteTask(id: number) {
-        setTasks(tasks.filter((task) => task.id !== id))
     }
 
     return (
@@ -138,30 +170,20 @@ export default function Tasks() {
 
                             <div className={Styles.modalSelect}>
 
-                                <select
-                                    value={newTask.priority || "no"}
-                                    onChange={(e) =>
-                                        setNewTask({
-                                            ...newTask,
-                                            priority: (e.target.value === "no" ?
-                                                null : e.target.value) as
-                                                PriorityType
-                                        })
-                                    }
-                                >
-                                    <option value="no">
-                                        <Priority type="going" />
-                                    </option>
-                                    <option value="low">
-                                        <Priority type="low" />
-                                    </option>
-                                    <option value="medium">
-                                        <Priority type="medium" />
-                                    </option>
-                                    <option value="high">
-                                        <Priority type="high" />
-                                    </option>
-                                </select>
+                            <select
+                                value={newTask.priority || "no"}
+                                onChange={(e) =>
+                                    setNewTask({
+                                        ...newTask,
+                                        priority: (e.target.value === "" ?
+                                            null : e.target.value) as PriorityType
+                                    })
+                                }
+                            >
+                                <option value="low">Baixa Prioridade</option>
+                                <option value="medium">Média Prioridade</option>
+                                <option value="high">Alta Prioridade</option>
+                            </select>
 
                                 <input
                                     type="date"
@@ -223,19 +245,20 @@ export default function Tasks() {
                     </div>
 
                     <main className={Styles.main}>
-
-                        {tasks.map((task) => {
-                            return (
-                                <Task
-                                    key={task.id}
-                                    title={task.title}
-                                    description={task.description}
-                                    {...task.priority && { priority: task.priority }}
-                                    {...task.deadline && { deadline: task.deadline }}
-                                    onDelete={() => handleDeleteTask(task.id)}
-                                />
-                            )
-                        })}
+                    {tasks.map((task, index) => {
+    const formattedDeadline: string | Date | undefined = task.deadline instanceof Date ? task.deadline : (task.deadline ? new Date(task.deadline) : undefined);
+    return (
+        <Task
+            key={index} // Use index como key, já que os IDs não estão disponíveis
+            title={task.title}
+            description={task.description}
+            priority={task.priority}
+            deadline={formattedDeadline}
+            id={task.id}
+            onDelete={() => handleDeleteTask(task.id)}
+        />
+    )
+})}
 
                     </main>
 
@@ -244,3 +267,4 @@ export default function Tasks() {
         </PrivateRoute>
     )
 }
+
